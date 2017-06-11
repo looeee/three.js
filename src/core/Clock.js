@@ -1,72 +1,167 @@
-/**
- * @author alteredq / http://alteredqualia.com/
- */
+function Clock( autostart ) {
 
-function Clock( autoStart ) {
+  // Keep track of time when pause() was called
+	let _pauseTime;
 
-	this.autoStart = ( autoStart !== undefined ) ? autoStart : true;
+  // Keep track of time when delta was last checked
+	let _lastDelta = 0;
 
-	this.startTime = 0;
-	this.oldTime = 0;
-	this.elapsedTime = 0;
+  // Hold the time when start() was called
+  // There is no point in exposing this as it's essentially a random number
+  // and will be different depending on whether performance.now or Date.now is used
+	let _startTime = 0;
 
 	this.running = false;
+	this.paused = false;
 
-}
+  // The scale at which the time is passing. This can be used for slow motion effects.
+	let _timeScale = 1.0;
+  // Keep track of scaled time across scale changes
+	let _totalTimeAtLastScaleChange = 0;
+	let _timeAtLastScaleChange = 0;
 
-Object.assign( Clock.prototype, {
+	Object.defineProperties( this, {
 
-	start: function () {
+		now: {
 
-		this.startTime = ( typeof performance === 'undefined' ? Date : performance ).now(); // see #10732
+			get() {
 
-		this.oldTime = this.startTime;
-		this.elapsedTime = 0;
+				return ( performance || Date ).now() / 1000;
+
+			}
+
+		},
+
+		timeScale: {
+
+			get() {
+
+				return _timeScale;
+
+			},
+
+			set( value ) {
+
+				_totalTimeAtLastScaleChange = this.totalTime;
+
+				// this may need to be changed
+				_timeAtLastScaleChange = ( this.running ) ? this.now : 0;
+
+				_timeScale = value;
+
+			},
+
+		},
+
+		unscaledTotalTime: {
+
+			get() {
+
+				if ( ! this.running && autostart ) this.start();
+
+				return ( this.running ) ? this.now - _startTime : 0;
+
+			},
+
+		},
+
+		totalTime: {
+
+			get() {
+
+				if ( ! this.running && autostart ) this.start();
+
+				const diff = ( this.now - _timeAtLastScaleChange ) * this.timeScale;
+
+				return ( this.running ) ? _totalTimeAtLastScaleChange + diff : 0;
+
+			},
+
+		},
+
+    // Unscaled time since delta was last checked
+		unscaledDelta: {
+
+			get() {
+				if ( ! this.running && autostart ) this.start();
+
+				const diff = ( this.running ) ? this.now - _lastDelta : 0;
+				_lastDelta = ( this.running ) ? this.now : 0;
+				return diff;
+
+			},
+
+		},
+
+    // Scaled time since delta was last checked
+		delta: {
+
+			get() {
+
+				return this.unscaledDelta * this.timeScale;
+
+			},
+
+		},
+
+	} );
+
+	this.start = function () {
+
+		if ( this.paused ) {
+
+			const diff = ( this.now - _pauseTime );
+
+			_startTime += diff;
+			_lastDelta += diff;
+			_timeAtLastScaleChange += diff;
+
+		} else if ( ! this.running ) {
+
+			_startTime = _lastDelta = _timeAtLastScaleChange = this.now;
+
+			_totalTimeAtLastScaleChange = 0;
+
+		}
+
 		this.running = true;
+		this.paused = false;
 
-	},
+	};
 
-	stop: function () {
+  // Reset and stop clock
+	this.stop = function () {
 
-		this.getElapsedTime();
+		_startTime = 0;
+		_totalTimeAtLastScaleChange = 0;
+
 		this.running = false;
 
-	},
+	};
 
-	getElapsedTime: function () {
+	this.pause = function () {
 
-		this.getDelta();
-		return this.elapsedTime;
+		_pauseTime = this.now;
 
-	},
+		this.paused = true;
 
-	getDelta: function () {
+	};
 
-		var diff = 0;
 
-		if ( this.autoStart && ! this.running ) {
+  // Backwards compatibility with old Clock
 
-			this.start();
-			return 0;
+	this.getElapsedTime = function () {
 
-		}
+		return this.totalTime;
 
-		if ( this.running ) {
+	};
 
-			var newTime = ( typeof performance === 'undefined' ? Date : performance ).now();
+	this.getDelta = function () {
 
-			diff = ( newTime - this.oldTime ) / 1000;
-			this.oldTime = newTime;
+		return this.delta;
 
-			this.elapsedTime += diff;
+	};
 
-		}
-
-		return diff;
-
-	}
-
-} );
-
+}
 
 export { Clock };
