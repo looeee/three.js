@@ -21,7 +21,7 @@ function mockPerformance() {
 QUnit.test( "clock with performance", function( assert ) {
 	mockPerformance();
 
-	var clock = new THREE.Clock( false );
+	var clock = new THREE.Clock( true );
 
 	clock.start();
 
@@ -31,8 +31,8 @@ QUnit.test( "clock with performance", function( assert ) {
 	self.performance.next( 100 );
 	assert.numEqual( clock.getElapsedTime(), 0.223, "okay" );
 
-	clock.stop();
+	clock.pause();
 
 	self.performance.next( 1000 );
-	assert.numEqual( clock.getElapsedTime(), 0.223, "don't update time if the clock was stopped" );
+	assert.numEqual( clock.getElapsedTime(), 0.223, "Don't update time if the clock is paused" );
 });
