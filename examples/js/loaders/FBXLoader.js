@@ -314,7 +314,7 @@
 
 		var FBX_ID = textureNode.id;
 
-		var name = textureNode.name;
+		var name = textureNode.attrName;
 
 		var fileName;
 
@@ -328,7 +328,7 @@
 			fileName = imageMap.get( children[ 0 ].ID );
 
 		} else if ( relativeFilePath !== undefined && relativeFilePath[ 0 ] !== '/' &&
-				relativeFilePath.match( /^[a-zA-Z]:/ ) === null ) {
+			relativeFilePath.match( /^[a-zA-Z]:/ ) === null ) {
 
 			// use textureNode.properties.RelativeFilename
 			// if it exists and it doesn't seem an absolute path
@@ -528,14 +528,25 @@
 
 			switch ( type ) {
 
+				case 'Bump':
+				case ' "Bump':
+					parameters.bumpMap = textureMap.get( relationship.ID );
+					break;
+
 				case 'DiffuseColor':
 				case ' "DiffuseColor':
 					parameters.map = textureMap.get( relationship.ID );
 					break;
 
-				case 'Bump':
-				case ' "Bump':
-					parameters.bumpMap = textureMap.get( relationship.ID );
+				case 'DisplacementColor':
+				case ' "DisplacementColor':
+					parameters.displacementMap = textureMap.get( relationship.ID );
+					break;
+
+
+				case 'EmissiveColor':
+				case ' "EmissiveColor':
+					parameters.emissiveMap = textureMap.get( relationship.ID );
 					break;
 
 				case 'NormalMap':
@@ -543,12 +554,32 @@
 					parameters.normalMap = textureMap.get( relationship.ID );
 					break;
 
+				case 'SpecularColor':
+				case ' "SpecularColor':
+					parameters.specularMap = textureMap.get( relationship.ID );
+					break;
+
+				case 'TransparentColor':
+				case ' "TransparentColor':
+					parameters.alphaMap = textureMap.get( relationship.ID );
+					parameters.transparent = true;
+					break;
+
+				case 'ReflectionColor':
+				case ' "ReflectionColor':
+					console.warn( 'THREE.FBXLoader: Environment maps are currently not supported.' );
+					break;
+
 				case 'AmbientColor':
-				case 'EmissiveColor':
 				case ' "AmbientColor':
-				case ' "EmissiveColor':
+				case 'ShininessExponent': // AKA glossiness map
+				case ' "ShininessExponent':
+				case 'SpecularFactor': // AKA specularLevel
+				case ' "SpecularFactor':
+				case 'VectorDisplacementColor': // NOTE: Seems to be a copy of DisplacementColor
+				case ' "VectorDisplacementColor':
 				default:
-					console.warn( 'THREE.FBXLoader: Unknown texture application of type %s, skipping texture.', type );
+					console.warn( 'THREE.FBXLoader: %s map is not supported in three.js, skipping texture.', type );
 					break;
 
 			}
@@ -1737,7 +1768,7 @@
 
 			}
 
-			model.name = node.attrName.replace( /:/, '' ).replace( /_/, '' ).replace( /-/, '' );
+			model.name = THREE.PropertyBinding.sanitizeNodeName( node.attrName );
 			model.FBX_ID = id;
 
 			modelArray.push( model );
@@ -3781,7 +3812,7 @@
 
 			for ( var i = 0; i < this.vertices.length; ++ i ) {
 
-				 this.vertices[ i ].copy( returnVar.vertices[ i ] );
+				this.vertices[ i ].copy( returnVar.vertices[ i ] );
 
 			}
 
@@ -3886,7 +3917,7 @@
 		/**
 		 * @returns	{{vertexBuffer: number[], normalBuffer: number[], uvBuffers: Array of number[], skinIndexBuffer: number[], skinWeightBuffer: number[], materialIndexBuffer: number[]}}
 		 */
-	 	flattenToBuffers: function () {
+		flattenToBuffers: function () {
 
 			var vertexBuffer = [];
 			var normalBuffer = [];
@@ -3924,7 +3955,7 @@
 
 	} );
 
-	function TextParser() {}
+	function TextParser() { }
 
 	Object.assign( TextParser.prototype, {
 
@@ -4342,7 +4373,7 @@
 	// Binary format specification:
 	//   https://code.blender.org/2013/08/fbx-binary-file-format-specification/
 	//   https://wiki.rogiken.org/specifications/file-format/fbx/ (more detail but Japanese)
-	function BinaryParser() {}
+	function BinaryParser() { }
 
 	Object.assign( BinaryParser.prototype, {
 
@@ -4541,7 +4572,7 @@
 					if ( innerPropType1.indexOf( 'Lcl ' ) === 0 ) innerPropType1 = innerPropType1.replace( 'Lcl ', 'Lcl_' );
 
 					if ( innerPropType1 === 'ColorRGB' || innerPropType1 === 'Vector' ||
-						 innerPropType1 === 'Vector3D' || innerPropType1.indexOf( 'Lcl_' ) === 0 ) {
+						innerPropType1 === 'Vector3D' || innerPropType1.indexOf( 'Lcl_' ) === 0 ) {
 
 						innerPropValue = [
 							node.propertyList[ 4 ],
@@ -5102,7 +5133,7 @@
 	} );
 
 
-	function FBXTree() {}
+	function FBXTree() { }
 
 	Object.assign( FBXTree.prototype, {
 
@@ -5199,8 +5230,8 @@
 
 			} else {
 
-				this.__cache_search_connection_children[ id ] = [ ];
-				return [ ];
+				this.__cache_search_connection_children[ id ] = [];
+				return [];
 
 			}
 
