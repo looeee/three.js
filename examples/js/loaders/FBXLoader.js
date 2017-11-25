@@ -2117,10 +2117,9 @@
 
 	// Parses animation information from nodes in
 	// FBXTree.Objects.subNodes.AnimationCurve: child of an AnimationCurveNode, holds the raw animation data (e.g. x axis rotation )
-	// FBXTree.Objects.subNodes.AnimationCurveNode: child of an AnimationLayer and connected to whichever node is being animated
-	// FBXTree.Objects.subNodes.AnimationLayer: child of an AnimationStack
-	// FBXTree.Objects.subNodes.AnimationStack
-	// Multiple animation takes are stored in AnimationLayer and AnimationStack
+	// FBXTree.Objects.subNodes.AnimationCurveNode: child of an AnimationLayer and connected to whichever node is being animated. Holds data for an animation transform for a model (e.g. left arm rotation )
+	// FBXTree.Objects.subNodes.AnimationLayer: child of an AnimationStack (note: theoretically a stack can multiple layers, however in practice there always seems to be one per stack)
+	// FBXTree.Objects.subNodes.AnimationStack: stores an animation take, in three.js called an AnimationClip
 	// Note: There is also FBXTree.Takes, however this seems to be left over from an older version of the
 	// format and is no longer used
 	function parseAnimations( FBXTree, connections ) {
@@ -2138,21 +2137,29 @@
 
 		var curveNodesMap = new Map();
 
+		// e.g. left arm rotation
 		for ( var nodeID in rawCurveNodes ) {
 
-			var animationNode = parseAnimationCurveNode( FBXTree, rawCurveNodes[ nodeID ], connections );
+			var animationCurveNode = parseAnimationCurveNode( rawCurveNodes[ nodeID ] );
 
-			if ( animationNode !== null ) {
+			if ( animationCurveNode !== null ) {
 
-				curveNodesMap.set( animationNode.id, animationNode );
+				curveNodesMap.set( animationCurveNode.id, animationCurveNode );
 
 			}
 
 		}
 
+		// e.g. x axis rotation
 		for ( nodeID in rawCurves ) {
 
-			var animationCurve = parseAnimationCurve( rawCurves[ nodeID ] );
+			var animationCurve = {
+
+				id: rawCurves[ nodeID ].id,
+				times: rawCurves[ nodeID ].subNodes.KeyTime.properties.a.map( convertFBXTimeToSeconds ),
+				values: rawCurves[ nodeID ].subNodes.KeyValueFloat.properties.a,
+
+			};
 
 			var conns = connections.get( animationCurve.id );
 
@@ -2187,111 +2194,98 @@
 
 		}
 
-		// loop over rotation values, convert to radians and add any pre rotation
-		curveNodesMap.forEach( function ( curveNode ) {
-
-			if ( curveNode.attr === 'R' ) {
-
-				var curves = curveNode.curves;
-
-				if ( curves.x !== null ) curves.x.values.map( THREE.Math.degToRad );
-				if ( curves.y !== null ) curves.y.values.map( THREE.Math.degToRad );
-				if ( curves.z !== null ) curves.z.values.map( THREE.Math.degToRad );
-
-				// if ( curveNode.preRotations !== null ) {
-
-				// 	var preRotations = curveNode.preRotations.map( THREE.Math.degToRad );
-				// 	preRotations.push( 'ZYX' );
-				// 	preRotations = new THREE.Euler().fromArray( preRotations );
-				// 	preRotations = new THREE.Quaternion().setFromEuler( preRotations );
-
-				// 	var frameRotation = new THREE.Euler();
-				// 	var frameRotationQuaternion = new THREE.Quaternion();
-
-				// 	// note: this currently assumes that if a time is defined for curves.x then it is defined for curve.y and curve.z
-				// 	// as well, which is probably not true in all cases
-				// 	curves.x.times.forEach( function ( time, i ) {
-
-				// 		frameRotation.set( curves.x.values[ i ], curves.y.values[ i ], curves.z.values[ i ], 'ZYX' );
-				// 		frameRotationQuaternion.setFromEuler( frameRotation ).premultiply( preRotations );
-				// 		frameRotation.setFromQuaternion( frameRotationQuaternion, 'ZYX' );
-
-				// 		curves.x.values[ i ] = frameRotation.x;
-				// 		curves.y.values[ i ] = frameRotation.y;
-				// 		curves.z.values[ i ] = frameRotation.z;
-
-				// 	} );
-
-				// }
-
-			}
-
-		} );
-
 		var layersMap = new Map();
 
 		for ( var nodeID in rawLayers ) {
 
-			var layer = [];
+			var layerCurveNodes = [];
 
 			var connection = connections.get( parseInt( nodeID ) );
 
 			if ( connection !== undefined ) {
 
+				// all the animationCurveNodes used in the layer
 				var children = connection.children;
 
 				children.forEach( function ( child, i ) {
 
-					// Skip lockInfluenceWeights
 					if ( curveNodesMap.has( child.ID ) ) {
 
 						var curveNode = curveNodesMap.get( child.ID );
 
-						if ( layer[ i ] === undefined ) {
+						if ( layerCurveNodes[ i ] === undefined ) {
 
-							layer[ i ] = {
+							var modelID = connections.get( child.ID ).parents[ 1 ].ID;
 
-								T: null,
-								R: null,
-								S: null
+							var rawModel = FBXTree.Objects.subNodes.Model[ modelID.toString() ];
+
+							var node = {
+
+								modelName: THREE.PropertyBinding.sanitizeNodeName( rawModel.attrName ),
 
 							};
 
+							if ( 'Lcl_Translation' in rawModel.properties ) {
+
+								node.initialPosition = rawModel.properties.Lcl_Translation.value;
+
+							}
+
+							if ( 'Lcl_Rotation' in rawModel.properties ) {
+
+								node.initialRotation = rawModel.properties.Lcl_Rotation.value;
+								node.initialRotation.push( 'ZYX' );
+
+							}
+
+							if ( 'Lcl_Scaling' in rawModel.properties ) {
+
+								node.initialScale = rawModel.properties.Lcl_Scaling.value;
+
+							}
+
+							// if the animated model is pre rotated, we'll have to apply the pre rotations to every
+							// animation value as well
+							if ( 'PreRotation' in rawModel.properties ) {
+
+								node.preRotations = rawModel.properties.PreRotation.value;
+
+							}
+
+							layerCurveNodes[ i ] = node;
+
 						}
 
-						layer[ i ][ curveNode.attr ] = curveNode;
+						layerCurveNodes[ i ][ curveNode.attr ] = curveNode;
 
 					}
 
 				} );
 
-				layersMap.set( parseInt( nodeID ), layer );
+				layersMap.set( parseInt( nodeID ), layerCurveNodes );
 
 			}
 
 		}
 
+		// connect the stacks (clips) up to the layers
 		for ( var nodeID in rawStacks ) {
 
-			var layers = [];
 			var children = connections.get( parseInt( nodeID ) ).children;
 
-			children.forEach( function ( child ) {
+			if ( children.length > 1 ) {
 
-				var layer = layersMap.get( child.ID );
+				// it seems like stacks will always be associated with a single layer. But just in case, we'll display a warning
+				console.warn( 'THREE.FBXLoader: Encountered an animation stack with multiple layers, this is currently not supported. Ignoring subsequent layers.' );
 
-				if ( layer !== undefined ) {
+			}
 
-					layers.push( layer );
-
-				}
-
-			} );
+			var layer = layersMap.get( children[ 0 ].ID );
 
 			rawClips[ nodeID ] = {
 
 				name: rawStacks[ nodeID ].attrName,
-				layers: layers,
+				layer: layer,
 
 			};
 
@@ -2302,77 +2296,24 @@
 	}
 
 	// parse a node in FBXTree.Objects.subNodes.AnimationCurveNode
-	function parseAnimationCurveNode( FBXTree, animationCurveNode, connections ) {
+	function parseAnimationCurveNode( rawCurveNode ) {
 
-		var returnObject = {
+		var curveNode = {
 
-			id: animationCurveNode.id,
-			attr: animationCurveNode.attrName,
-			modelName: '',
-			initialPosition: [ 0, 0, 0 ],
-			initialRotation: [ 0, 0, 0 ],
-			initialScale: [ 0, 0, 0 ],
+			id: rawCurveNode.id,
+			attr: rawCurveNode.attrName,
 			curves: {
 				x: null,
 				y: null,
 				z: null
 			},
-			preRotations: null,
+
 
 		};
 
-		if ( returnObject.attr.match( /S|R|T/ ) === null ) return null;
+		if ( curveNode.attr.match( /S|R|T/ ) === null ) return null;
 
-		// get a list of parents - one of these will be the model being animated by this curve
-		var parents = connections.get( returnObject.id ).parents;
-
-		var modelID = parents[ 1 ].ID;
-
-		var rawModel = FBXTree.Objects.subNodes.Model[ modelID.toString() ];
-
-		returnObject.modelName = rawModel.attrName;
-
-		// TODO: make these conditional
-		if ( 'Lcl_Translation' in rawModel.properties ) {
-
-			returnObject.initialPosition = rawModel.properties.Lcl_Translation.value;
-
-		}
-
-		if ( 'Lcl_Rotation' in rawModel.properties ) {
-
-			returnObject.initialRotation = rawModel.properties.Lcl_Rotation.value;
-
-		}
-
-		if ( 'Lcl_Scaling' in rawModel.properties ) {
-
-			returnObject.initialScale = rawModel.properties.Lcl_Scaling.value;
-
-		}
-
-		// if the animated model is pre rotated, we'll have to apply the pre rotations to every
-		// animation value as well
-		if ( 'PreRotation' in rawModel.properties ) {
-
-			returnObject.preRotations = rawModel.properties.PreRotation.value;
-
-		}
-
-		return returnObject;
-
-	}
-
-	// parse single node in FBXTree.Objects.subNodes.AnimationCurve
-	function parseAnimationCurve( animationCurve ) {
-
-		return {
-
-			id: animationCurve.id,
-			times: animationCurve.subNodes.KeyTime.properties.a.map( convertFBXTimeToSeconds ),
-			values: animationCurve.subNodes.KeyValueFloat.properties.a,
-
-		};
+		return curveNode;
 
 	}
 
@@ -2400,7 +2341,7 @@
 
 		var tracks = [];
 
-		rawClip.layers[ 0 ].forEach( function ( rawTracks ) {
+		rawClip.layer.forEach( function ( rawTracks ) {
 
 			tracks = tracks.concat( generateTracks( rawTracks ) );
 
@@ -2415,22 +2356,23 @@
 
 		var tracks = [];
 
-		if ( rawClip.T !== null ) {
+		if ( rawClip.T !== undefined ) {
 
-			var positionTrack = generateVectorTrack( rawClip.T.modelName, rawClip.T.curves, rawClip.T.initialPosition, 'position' );
+			var positionTrack = generateVectorTrack( rawClip.modelName, rawClip.T.curves, rawClip.initialPosition, 'position' );
 			if ( positionTrack !== undefined ) tracks.push( positionTrack );
 
 		}
 
-		if ( rawClip.R !== null ) {
+		if ( rawClip.R !== undefined ) {
 
-			// generateRotationTrack( rawClip.R.modelName, rawClip.R.curves, rawClip.T.initialRotation, 'position' );
+			var rotationTrack = generateRotationTrack( rawClip.modelName, rawClip.R.curves, rawClip.initialRotation, rawClip.preRotations );
+			if ( rotationTrack !== undefined ) tracks.push( rotationTrack );
 
 		}
 
-		if ( rawClip.S !== null ) {
+		if ( rawClip.S !== undefined ) {
 
-			var scaleTrack = generateVectorTrack( rawClip.S.modelName, rawClip.S.curves, rawClip.S.initialScale, 'position' );
+			var scaleTrack = generateVectorTrack( rawClip.modelName, rawClip.S.curves, rawClip.initialScale, 'scale' );
 			if ( scaleTrack !== undefined ) tracks.push( scaleTrack );
 
 		}
@@ -2439,8 +2381,10 @@
 
 	}
 
+	// TODO: simplify generateVectorTrack and generateQuaternionTrack
 	function generateVectorTrack( modelName, curves, prevFrameValue, type ) {
 
+		// TODO: no guarantee that xValues etc are defined
 		var xValues = curves.x.values;
 		var yValues = curves.y.values;
 		var zValues = curves.z.values;
@@ -2504,6 +2448,106 @@
 
 	}
 
+	function generateRotationTrack( modelName, curves, prevFrameValue, preRotations ) {
+
+		var quaternion = new THREE.Quaternion();
+		var euler = new THREE.Euler();
+
+		prevFrameValue = prevFrameValue.map( THREE.Math.degToRad );
+
+		if ( preRotations !== undefined ) {
+
+			preRotations = preRotations.map( THREE.Math.degToRad );
+			preRotations.push( 'ZYX' );
+
+			preRotations = new THREE.Euler().fromArray( preRotations );
+			preRotations = new THREE.Quaternion().setFromEuler( preRotations );
+
+		}
+
+		euler.onChange( function () {
+
+			quaternion.setFromEuler( this );
+
+			if ( preRotations !== undefined ) {
+
+				quaternion.premultiply( preRotations );
+
+			}
+
+		} );
+
+		var xValues = curves.x.values.map( THREE.Math.degToRad );
+		var yValues = curves.y.values.map( THREE.Math.degToRad );
+		var zValues = curves.z.values.map( THREE.Math.degToRad );
+
+		var xTimes = curves.x.times;
+		var yTimes = curves.y.times;
+		var zTimes = curves.z.times;
+
+		// there needs to be at least two times defined on at least one axis for a valid animation
+		if ( xTimes.length < 2 && yTimes.length < 2 && zTimes.length < 2 ) return;
+
+		var times = getTimesForAllAxes( curves );
+
+		var values = [];
+
+		var currentFrameValue = [ 0, 0, 0, 'ZYX' ];
+
+		times.forEach( function ( time, i ) {
+
+			var xIndex = xTimes.indexOf( time );
+			var yIndex = yTimes.indexOf( time );
+			var zIndex = zTimes.indexOf( time );
+
+			if ( xIndex !== - 1 ) {
+
+				var xValue = xValues[ xIndex ];
+				currentFrameValue[ 0 ] = xValue;
+				prevFrameValue[ 0 ] = xValue;
+
+			} else {
+
+				currentFrameValue[ 0 ] = prevFrameValue[ 0 ];
+
+			}
+
+			if ( yIndex !== - 1 ) {
+
+				var yValue = yValues[ yIndex ];
+				currentFrameValue[ 1 ] = yValue;
+				prevFrameValue[ 1 ] = yValue;
+
+			} else {
+
+				currentFrameValue[ 1 ] = prevFrameValue[ 1 ];
+
+			}
+
+			if ( zIndex !== - 1 ) {
+
+				var zValue = zValues[ zIndex ];
+				currentFrameValue[ 2 ] = zValue;
+				prevFrameValue[ 2 ] = zValue;
+
+			} else {
+
+				currentFrameValue[ 2 ] = prevFrameValue[ 2 ];
+
+			}
+
+			euler.fromArray( currentFrameValue );
+			quaternion.toArray( values, i * 4 );
+
+
+		} );
+
+		return new THREE.QuaternionKeyframeTrack( modelName + '.quaternion', times, values );
+
+	}
+
+	// For all animated objects, times are defined separately for each axis
+	// Here we'll combine the times into one list
 	function getTimesForAllAxes( curves ) {
 
 		var allTimes = [];
@@ -2513,8 +2557,7 @@
 		if ( curves.y !== null ) allTimes = allTimes.concat( curves.y.times );
 		if ( curves.z !== null ) allTimes = allTimes.concat( curves.z.times );
 
-		// then sort them and remove duplicates, so we have an array of times for
-		// defined values on all axes
+		// then sort them and remove duplicates
 		allTimes = allTimes.sort( function ( a, b ) {
 
 			return a - b;
@@ -2526,132 +2569,6 @@
 		} );
 
 		return allTimes;
-
-	}
-
-	var euler = new THREE.Euler();
-	var quaternion = new THREE.Quaternion();
-
-	function generateKey( fps, animationNode, model, frame ) {
-
-		var key = {
-
-			time: frame / fps,
-			pos: model.position.toArray(),
-			rot: model.quaternion.toArray(),
-			scl: model.scale.toArray(),
-
-		};
-
-		euler.setFromQuaternion( model.quaternion, 'ZYX', false );
-
-		if ( hasCurve( animationNode, 'T' ) && hasKeyOnFrame( animationNode.T, frame ) ) {
-
-			if ( animationNode.T.curves.x.values[ frame ] ) {
-
-				key.pos[ 0 ] = animationNode.T.curves.x.values[ frame ];
-
-			}
-
-			if ( animationNode.T.curves.y.values[ frame ] ) {
-
-				key.pos[ 1 ] = animationNode.T.curves.y.values[ frame ];
-
-			}
-
-			if ( animationNode.T.curves.z.values[ frame ] ) {
-
-				key.pos[ 2 ] = animationNode.T.curves.z.values[ frame ];
-
-			}
-
-		}
-
-		if ( hasCurve( animationNode, 'R' ) && hasKeyOnFrame( animationNode.R, frame ) ) {
-
-			// Only update the euler's values if rotation is defined for the axis on this frame
-			if ( animationNode.R.curves.x.values[ frame ] ) {
-
-				euler.x = animationNode.R.curves.x.values[ frame ];
-
-			}
-
-			if ( animationNode.R.curves.y.values[ frame ] ) {
-
-				euler.y = animationNode.R.curves.y.values[ frame ];
-
-			}
-
-			if ( animationNode.R.curves.z.values[ frame ] ) {
-
-				euler.z = animationNode.R.curves.z.values[ frame ];
-
-			}
-
-			quaternion.setFromEuler( euler );
-			key.rot = quaternion.toArray();
-
-		}
-
-		if ( hasCurve( animationNode, 'S' ) && hasKeyOnFrame( animationNode.S, frame ) ) {
-
-			if ( animationNode.T.curves.x.values[ frame ] ) {
-
-				key.scl[ 0 ] = animationNode.S.curves.x.values[ frame ];
-
-			}
-
-			if ( animationNode.T.curves.y.values[ frame ] ) {
-
-				key.scl[ 1 ] = animationNode.S.curves.y.values[ frame ];
-
-			}
-
-			if ( animationNode.T.curves.z.values[ frame ] ) {
-
-				key.scl[ 2 ] = animationNode.S.curves.z.values[ frame ];
-
-			}
-
-		}
-
-		return key;
-
-	}
-
-	var AXES = [ 'x', 'y', 'z' ];
-
-	function hasCurve( animationNode, attribute ) {
-
-		if ( animationNode === undefined ) {
-
-			return false;
-
-		}
-
-		var attributeNode = animationNode[ attribute ];
-
-		if ( ! attributeNode ) {
-
-			return false;
-
-		}
-
-		return AXES.every( function ( key ) {
-
-			return attributeNode.curves[ key ] !== null;
-
-		} );
-
-	}
-
-	function hasKeyOnFrame( attributeNode, frame ) {
-
-		return AXES.every( function ( key ) {
-
-			return attributeNode.curves[ key ].values[ frame ] !== undefined;
-
-		} );
 
 	}
 
