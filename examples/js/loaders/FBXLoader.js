@@ -49,7 +49,9 @@
 
 				try {
 
+					console.time( 'parse: ' );
 					var scene = self.parse( buffer, resourceDirectory );
+					console.timeEnd( 'parse: ' );
 					onLoad( scene );
 
 				} catch ( error ) {
@@ -96,7 +98,7 @@
 
 			}
 
-			// console.log( FBXTree );
+			console.log( FBXTree );
 
 			var connections = parseConnections( FBXTree );
 			var images = parseImages( FBXTree );
@@ -1489,7 +1491,7 @@
 
 		bindSkeleton( FBXTree, deformers, geometryMap, modelMap, connections, sceneGraph );
 
-		addAnimations( FBXTree, connections, sceneGraph, modelMap );
+		addAnimations( FBXTree, connections, sceneGraph );
 
 		createAmbientLight( FBXTree, sceneGraph );
 
@@ -2121,7 +2123,7 @@
 	// Multiple animation takes are stored in AnimationLayer and AnimationStack
 	// Note: There is also FBXTree.Takes, however this seems to be left over from an older version of the
 	// format and is no longer used
-	function parseAnimations( FBXTree, connections, modelArray ) {
+	function parseAnimations( FBXTree, connections ) {
 
 		var rawCurves = FBXTree.Objects.subNodes.AnimationCurve;
 		var rawCurveNodes = FBXTree.Objects.subNodes.AnimationCurveNode;
@@ -2132,18 +2134,13 @@
 		// if this is undefined we can safely assume there are no animations
 		if ( FBXTree.Objects.subNodes.AnimationCurve === undefined ) return undefined;
 
-		var animations = {
-
-			takes: {},
-			fps: getFrameRate( FBXTree ),
-
-		};
+		var rawClips = {};
 
 		var curveNodesMap = new Map();
 
 		for ( var nodeID in rawCurveNodes ) {
 
-			var animationNode = parseAnimationCurveNode( FBXTree, rawCurveNodes[ nodeID ], connections, modelArray );
+			var animationNode = parseAnimationCurveNode( FBXTree, rawCurveNodes[ nodeID ], connections );
 
 			if ( animationNode !== null ) {
 
@@ -2190,13 +2187,6 @@
 
 		}
 
-		var emptyCurve = {
-
-			times: [ 0.0 ],
-			values: [ 0.0 ]
-
-		};
-
 		// loop over rotation values, convert to radians and add any pre rotation
 		curveNodesMap.forEach( function ( curveNode ) {
 
@@ -2204,39 +2194,35 @@
 
 				var curves = curveNode.curves;
 
-				if ( curves.x === null ) curves.x = emptyCurve;
-				if ( curves.y === null ) curves.y = emptyCurve;
-				if ( curves.z === null ) curves.z = emptyCurve;
+				if ( curves.x !== null ) curves.x.values.map( THREE.Math.degToRad );
+				if ( curves.y !== null ) curves.y.values.map( THREE.Math.degToRad );
+				if ( curves.z !== null ) curves.z.values.map( THREE.Math.degToRad );
 
-				curves.x.values = curves.x.values.map( THREE.Math.degToRad );
-				curves.y.values = curves.y.values.map( THREE.Math.degToRad );
-				curves.z.values = curves.z.values.map( THREE.Math.degToRad );
+				// if ( curveNode.preRotations !== null ) {
 
-				if ( curveNode.preRotations !== null ) {
+				// 	var preRotations = curveNode.preRotations.map( THREE.Math.degToRad );
+				// 	preRotations.push( 'ZYX' );
+				// 	preRotations = new THREE.Euler().fromArray( preRotations );
+				// 	preRotations = new THREE.Quaternion().setFromEuler( preRotations );
 
-					var preRotations = curveNode.preRotations.map( THREE.Math.degToRad );
-					preRotations.push( 'ZYX' );
-					preRotations = new THREE.Euler().fromArray( preRotations );
-					preRotations = new THREE.Quaternion().setFromEuler( preRotations );
+				// 	var frameRotation = new THREE.Euler();
+				// 	var frameRotationQuaternion = new THREE.Quaternion();
 
-					var frameRotation = new THREE.Euler();
-					var frameRotationQuaternion = new THREE.Quaternion();
+				// 	// note: this currently assumes that if a time is defined for curves.x then it is defined for curve.y and curve.z
+				// 	// as well, which is probably not true in all cases
+				// 	curves.x.times.forEach( function ( time, i ) {
 
-					// note: this currently assumes that if a time is defined for curves.x then it is defined for curve.y and curve.z
-					// as well, which is probably not true in all cases
-					curves.x.times.forEach( function ( time, i ) {
+				// 		frameRotation.set( curves.x.values[ i ], curves.y.values[ i ], curves.z.values[ i ], 'ZYX' );
+				// 		frameRotationQuaternion.setFromEuler( frameRotation ).premultiply( preRotations );
+				// 		frameRotation.setFromQuaternion( frameRotationQuaternion, 'ZYX' );
 
-						frameRotation.set( curves.x.values[ i ], curves.y.values[ i ], curves.z.values[ i ], 'ZYX' );
-						frameRotationQuaternion.setFromEuler( frameRotation ).premultiply( preRotations );
-						frameRotation.setFromQuaternion( frameRotationQuaternion, 'ZYX' );
+				// 		curves.x.values[ i ] = frameRotation.x;
+				// 		curves.y.values[ i ] = frameRotation.y;
+				// 		curves.z.values[ i ] = frameRotation.z;
 
-						curves.x.values[ i ] = frameRotation.x;
-						curves.y.values[ i ] = frameRotation.y;
-						curves.z.values[ i ] = frameRotation.z;
+				// 	} );
 
-					} );
-
-				}
+				// }
 
 			}
 
@@ -2254,17 +2240,16 @@
 
 				var children = connection.children;
 
-				children.forEach( function ( child ) {
+				children.forEach( function ( child, i ) {
 
 					// Skip lockInfluenceWeights
 					if ( curveNodesMap.has( child.ID ) ) {
 
 						var curveNode = curveNodesMap.get( child.ID );
-						var modelIndex = curveNode.modelIndex;
 
-						if ( layer[ modelIndex ] === undefined ) {
+						if ( layer[ i ] === undefined ) {
 
-							layer[ modelIndex ] = {
+							layer[ i ] = {
 
 								T: null,
 								R: null,
@@ -2274,7 +2259,7 @@
 
 						}
 
-						layer[ modelIndex ][ curveNode.attr ] = curveNode;
+						layer[ i ][ curveNode.attr ] = curveNode;
 
 					}
 
@@ -2290,7 +2275,6 @@
 
 			var layers = [];
 			var children = connections.get( parseInt( nodeID ) ).children;
-			var timestamps = { max: 0, min: Number.MAX_VALUE };
 
 			children.forEach( function ( child ) {
 
@@ -2300,46 +2284,34 @@
 
 					layers.push( layer );
 
-					layer.forEach( function ( elem ) {
-
-						getCurveNodeMaxMinTimeStamps( elem, timestamps );
-
-					} );
-
 				}
 
 			} );
 
-			// Check that the length is valid
-			if ( timestamps.max > timestamps.min ) {
+			rawClips[ nodeID ] = {
 
-				animations.takes[ nodeID ] = {
+				name: rawStacks[ nodeID ].attrName,
+				layers: layers,
 
-					name: rawStacks[ nodeID ].attrName,
-					layers: layers,
-					length: timestamps.max - timestamps.min,
-					frames: ( timestamps.max - timestamps.min ) * animations.fps
-
-				};
-
-			}
+			};
 
 		}
 
-		return animations;
+		return rawClips;
 
 	}
 
 	// parse a node in FBXTree.Objects.subNodes.AnimationCurveNode
-	function parseAnimationCurveNode( FBXTree, animationCurveNode, connections, modelArray ) {
-
-		var rawModels = FBXTree.Objects.subNodes.Model;
+	function parseAnimationCurveNode( FBXTree, animationCurveNode, connections ) {
 
 		var returnObject = {
 
 			id: animationCurveNode.id,
 			attr: animationCurveNode.attrName,
-			modelIndex: - 1,
+			modelName: '',
+			initialPosition: [ 0, 0, 0 ],
+			initialRotation: [ 0, 0, 0 ],
+			initialScale: [ 0, 0, 0 ],
 			curves: {
 				x: null,
 				y: null,
@@ -2354,32 +2326,38 @@
 		// get a list of parents - one of these will be the model being animated by this curve
 		var parents = connections.get( returnObject.id ).parents;
 
-		parents.forEach( function ( parent ) {
+		var modelID = parents[ 1 ].ID;
 
-			// the index of the model in the modelArray
-			var modelIndex = modelArray.map( function ( model ) {
+		var rawModel = FBXTree.Objects.subNodes.Model[ modelID.toString() ];
 
-				return model.FBX_ID;
+		returnObject.modelName = rawModel.attrName;
 
-			} ).indexOf( parent.ID );
+		// TODO: make these conditional
+		if ( 'Lcl_Translation' in rawModel.properties ) {
 
-			if ( modelIndex > - 1 ) {
+			returnObject.initialPosition = rawModel.properties.Lcl_Translation.value;
 
-				returnObject.modelIndex = modelIndex;
+		}
 
-				var model = rawModels[ parent.ID.toString() ];
+		if ( 'Lcl_Rotation' in rawModel.properties ) {
 
-				//if the animated model is pre rotated, we'll have to apply the pre rotations to every
-				// animation value as well
-				if ( 'PreRotation' in model.properties ) {
+			returnObject.initialRotation = rawModel.properties.Lcl_Rotation.value;
 
-					returnObject.preRotations = model.properties.PreRotation.value;
+		}
 
-				}
+		if ( 'Lcl_Scaling' in rawModel.properties ) {
 
-			}
+			returnObject.initialScale = rawModel.properties.Lcl_Scaling.value;
 
-		} );
+		}
+
+		// if the animated model is pre rotated, we'll have to apply the pre rotations to every
+		// animation value as well
+		if ( 'PreRotation' in rawModel.properties ) {
+
+			returnObject.preRotations = rawModel.properties.PreRotation.value;
+
+		}
 
 		return returnObject;
 
@@ -2398,137 +2376,19 @@
 
 	}
 
-	function getFrameRate( FBXTree ) {
-
-		var fps = 30; // default framerate
-
-		if ( 'GlobalSettings' in FBXTree && 'TimeMode' in FBXTree.GlobalSettings.properties ) {
-
-			/* Autodesk time mode documentation can be found here:
-			*	http://docs.autodesk.com/FBX/2014/ENU/FBX-SDK-Documentation/index.html?url=cpp_ref/class_fbx_time.html,topicNumber=cpp_ref_class_fbx_time_html
-			*/
-			var timeModeEnum = [
-				30, // 0: eDefaultMode
-				120, // 1: eFrames120
-				100, // 2: eFrames100
-				60, // 3: eFrames60
-				50, // 4: eFrames50
-				48, // 5: eFrames48
-				30, // 6: eFrames30 (black and white NTSC )
-				30, // 7: eFrames30Drop
-				29.97, // 8: eNTSCDropFrame
-				29.97, // 90: eNTSCFullFrame
-				25, // 10: ePal ( PAL/SECAM )
-				24, // 11: eFrames24 (Film/Cinema)
-				1, // 12: eFrames1000 (use for date time))
-				23.976, // 13: eFilmFullFrame
-				30, // 14: eCustom: use GlobalSettings.properties.CustomFrameRate.value
-				96, // 15: eFrames96
-				72, // 16: eFrames72
-				59.94, // 17: eFrames59dot94
-			];
-
-			var eMode = FBXTree.GlobalSettings.properties.TimeMode.value;
-
-			if ( eMode === 14 ) {
-
-				if ( 'CustomFrameRate' in FBXTree.GlobalSettings.properties ) {
-
-					fps = FBXTree.GlobalSettings.properties.CustomFrameRate.value;
-
-					fps = ( fps === - 1 ) ? 30 : fps;
-
-				}
-
-			} else if ( eMode <= 17 ) { // for future proofing - if more eModes get added, they will default to 30fps
-
-				fps = timeModeEnum[ eMode ];
-
-			}
-
-		}
-
-		return fps;
-
-	}
-
-	// Sets the maxTimeStamp and minTimeStamp variables if it has timeStamps that are either larger or smaller
-	// than the max or min respectively.
-	function getCurveNodeMaxMinTimeStamps( layer, timestamps ) {
-
-		if ( layer.R ) {
-
-			getCurveMaxMinTimeStamp( layer.R.curves, timestamps );
-
-		}
-		if ( layer.S ) {
-
-			getCurveMaxMinTimeStamp( layer.S.curves, timestamps );
-
-		}
-		if ( layer.T ) {
-
-			getCurveMaxMinTimeStamp( layer.T.curves, timestamps );
-
-		}
-
-	}
-
-	// Sets the maxTimeStamp and minTimeStamp if one of the curve's time stamps
-	// exceeds the maximum or minimum.
-	function getCurveMaxMinTimeStamp( curve, timestamps ) {
-
-		if ( curve.x ) {
-
-			getCurveAxisMaxMinTimeStamps( curve.x, timestamps );
-
-		}
-		if ( curve.y ) {
-
-			getCurveAxisMaxMinTimeStamps( curve.y, timestamps );
-
-		}
-		if ( curve.z ) {
-
-			getCurveAxisMaxMinTimeStamps( curve.z, timestamps );
-
-		}
-
-	}
-
-	// Sets the maxTimeStamp and minTimeStamp if one of its timestamps exceeds the maximum or minimum.
-	function getCurveAxisMaxMinTimeStamps( axis, timestamps ) {
-
-		timestamps.max = axis.times[ axis.times.length - 1 ] > timestamps.max ? axis.times[ axis.times.length - 1 ] : timestamps.max;
-		timestamps.min = axis.times[ 0 ] < timestamps.min ? axis.times[ 0 ] : timestamps.min;
-
-	}
-
-	function addAnimations( FBXTree, connections, sceneGraph, modelMap ) {
-
-		// create a flattened array of all models and bones in the scene
-		var modelArray = Array.from( modelMap.values() );
+	function addAnimations( FBXTree, connections, sceneGraph ) {
 
 		sceneGraph.animations = [];
 
-		var animations = parseAnimations( FBXTree, connections, modelArray );
+		var rawClips = parseAnimations( FBXTree, connections );
 
-		if ( animations === undefined ) return;
+		if ( rawClips === undefined ) return;
 
-		// Silly hack with the animation parsing. We're gonna pretend the scene graph has a skeleton
-		// to attach animations to, since FBX treats animations as animations for the entire scene,
-		// not just for individual objects.
-		sceneGraph.skeleton = {
+		for ( var key in rawClips ) {
 
-			bones: modelArray,
+			var rawClip = rawClips[ key ];
 
-		};
-
-		for ( var key in animations.takes ) {
-
-			var take = animations.takes[ key ];
-
-			var clip = addTake( take, animations.fps, modelArray );
+			var clip = addClip( rawClip );
 
 			sceneGraph.animations.push( clip );
 
@@ -2536,32 +2396,136 @@
 
 	}
 
-	function addTake( take, fps, modelArray ) {
+	function addClip( rawClip ) {
 
-		var animationData = {
-			name: take.name,
-			fps: fps,
-			length: take.length,
-			hierarchy: []
-		};
+		var tracks = [];
 
-		animationData.hierarchy = modelArray.map( ( model, i ) => {
+		rawClip.layers[ 0 ].forEach( function ( rawTracks ) {
 
-			var keys = [];
-
-			// note: assumes that the animation has been baked at one keyframe per frame
-			for ( var frame = 0; frame <= take.frames; frame ++ ) {
-
-				var animationNode = take.layers[ 0 ][ i ];
-				keys.push( generateKey( fps, animationNode, model, frame ) );
-
-			}
-
-			return { name: model.name, keys: keys };
+			tracks = tracks.concat( generateTracks( rawTracks ) );
 
 		} );
 
-		return THREE.AnimationClip.parseAnimation( animationData, modelArray );
+
+		return new THREE.AnimationClip( rawClip.name, - 1, tracks );
+
+	}
+
+	function generateTracks( rawClip ) {
+
+		var tracks = [];
+
+		if ( rawClip.T !== null ) {
+
+			var positionTrack = generateVectorTrack( rawClip.T.modelName, rawClip.T.curves, rawClip.T.initialPosition, 'position' );
+			if ( positionTrack !== undefined ) tracks.push( positionTrack );
+
+		}
+
+		if ( rawClip.R !== null ) {
+
+			// generateRotationTrack( rawClip.R.modelName, rawClip.R.curves, rawClip.T.initialRotation, 'position' );
+
+		}
+
+		if ( rawClip.S !== null ) {
+
+			var scaleTrack = generateVectorTrack( rawClip.S.modelName, rawClip.S.curves, rawClip.S.initialScale, 'position' );
+			if ( scaleTrack !== undefined ) tracks.push( scaleTrack );
+
+		}
+
+		return tracks;
+
+	}
+
+	function generateVectorTrack( modelName, curves, prevFrameValue, type ) {
+
+		var xValues = curves.x.values;
+		var yValues = curves.y.values;
+		var zValues = curves.z.values;
+
+		var xTimes = curves.x.times;
+		var yTimes = curves.y.times;
+		var zTimes = curves.z.times;
+
+		// there needs to be at least two times defined on at least one axis for a valid animation
+		if ( xTimes.length < 2 && yTimes.length < 2 && zTimes.length < 2 ) return;
+
+		var times = getTimesForAllAxes( curves );
+
+		var values = [];
+
+		times.forEach( function ( time ) {
+
+			var xIndex = xTimes.indexOf( time );
+			var yIndex = yTimes.indexOf( time );
+			var zIndex = zTimes.indexOf( time );
+
+			if ( xIndex !== - 1 ) {
+
+				var xValue = xValues[ xIndex ];
+				values.push( xValue );
+				prevFrameValue[ 0 ] = xValue;
+
+			} else {
+
+				values.push( prevFrameValue[ 0 ] );
+
+			}
+
+			if ( yIndex !== - 1 ) {
+
+				var yValue = yValues[ yIndex ];
+				values.push( yValue );
+				prevFrameValue[ 1 ] = yValue;
+
+			} else {
+
+				values.push( prevFrameValue[ 1 ] );
+
+			}
+
+			if ( zIndex !== - 1 ) {
+
+				var zValue = zValues[ zIndex ];
+				values.push( zValue );
+				prevFrameValue[ 2 ] = zValue;
+
+			} else {
+
+				values.push( prevFrameValue[ 2 ] );
+
+			}
+
+		} );
+
+		return new THREE.VectorKeyframeTrack( modelName + '.' + type, times, values );
+
+	}
+
+	function getTimesForAllAxes( curves ) {
+
+		var allTimes = [];
+
+		// first join together the times for each axis, if defined
+		if ( curves.x !== null ) allTimes = allTimes.concat( curves.x.times );
+		if ( curves.y !== null ) allTimes = allTimes.concat( curves.y.times );
+		if ( curves.z !== null ) allTimes = allTimes.concat( curves.z.times );
+
+		// then sort them and remove duplicates, so we have an array of times for
+		// defined values on all axes
+		allTimes = allTimes.sort( function ( a, b ) {
+
+			return a - b;
+
+		} ).filter( function ( item, pos, ary ) {
+
+			return ! pos || item != ary[ pos - 1 ];
+
+		} );
+
+		return allTimes;
 
 	}
 
@@ -2578,8 +2542,6 @@
 			scl: model.scale.toArray(),
 
 		};
-
-		if ( animationNode === undefined ) return key;
 
 		euler.setFromQuaternion( model.quaternion, 'ZYX', false );
 
