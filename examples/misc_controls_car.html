@@ -1,0 +1,202 @@
+<!DOCTYPE HTML>
+<html lang="en">
+	<head>
+		<title>three.js webgl - materials - dynamic cube reflection</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				background: #000;
+				color: #333;
+				padding: 0;
+				margin: 0;
+				overflow: hidden;
+				font-family: georgia;
+				font-size:1em;
+				text-align: center;
+			}
+			a { color: white }
+
+			#info { position: absolute; top: 10px; width: 100%; }
+			#container { position: absolute; top: 0px; }
+			#footer { position: absolute; bottom: 10px; width: 100%; }
+
+		</style>
+	</head>
+
+	<body>
+		<div id="container"></div>
+
+		<div id="info">
+			<a href="http://threejs.org" target="_blank" rel="noopener">three.js</a> - webgl dynamic cube reflection demo -
+			gallardo by <a href="http://artist-3d.com/free_3d_models/dnm/model_disp.php?uid=1711" target="_blank" rel="noopener">machman_3d</a>
+		</div>
+
+		<script src="../build/three.js"></script>
+
+		<script src="js/loaders/BinaryLoader.js"></script>
+
+		<script src="js/Car.js"></script>
+		<script src="js/Detector.js"></script>
+		<script src="js/libs/stats.min.js"></script>
+
+		<script>
+
+			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
+
+			var container, stats;
+
+			var camera, scene, renderer;
+			var renderTarget;
+
+			var spotLight, ambientLight;
+
+			var clock = new THREE.Clock();
+
+			var controls = {
+
+				moveForward: false,
+				moveBackward: false,
+				moveLeft: false,
+				moveRight: false
+
+			};
+
+			var car;
+
+			init();
+			animate();
+
+			function init() {
+
+				container = document.getElementById( 'container' );
+
+				camera = new THREE.PerspectiveCamera( 18, window.innerWidth / window.innerHeight, 1, 100000 );
+				camera.position.set( 3000, 0, 3000 );
+				camera.lookAt( new THREE.Vector3() )
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color().setHSL( 0.51, 0.6, 0.6 );
+				scene.fog = new THREE.Fog( scene.background, 3000, 10000 );
+
+				var ground = new THREE.Mesh( new THREE.PlaneBufferGeometry( 50000, 50000 ), new THREE.MeshBasicMaterial( { color: 0xcccccc } ) );
+				ground.position.y = - 215;
+				ground.rotation.x = - Math.PI / 2;
+				scene.add( ground );
+
+				ambientLight = new THREE.AmbientLight( 0x555555 );
+				scene.add( ambientLight );
+
+				spotLight = new THREE.SpotLight( 0xffffff, 1, 0, Math.PI/2 );
+				spotLight.position.set( 0, 1800, 1500 );
+				spotLight.castShadow = true;
+
+				scene.add( spotLight );
+
+				renderer = new THREE.WebGLRenderer( { antialias: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+				stats = new Stats();
+				container.appendChild( stats.dom );
+
+				car = new THREE.Car();
+
+				car.modelScale = 2;
+				car.backWheelOffset = 45;
+
+				car.callback = function( object ) {
+
+					object.root.position.set( 300, -110, 0, -110 );
+					scene.add( object.root );
+
+				};
+
+				// car.loadPartsBinary( "obj/gallardo/parts/gallardo_body_bin.js", "obj/gallardo/parts/gallardo_wheel_bin.js" );
+
+				var loader = new THREE.BinaryLoader();
+
+				loader.load( "obj/gallardo/parts/gallardo_body_bin.js", function( geometry, materials ) {
+
+					car.createBody( geometry, materials )
+
+				} );
+				loader.load( "obj/gallardo/parts/gallardo_wheel_bin.js", function( geometry, materials ) {
+
+					car.createWheels( geometry, materials )
+
+				} );
+
+
+				document.addEventListener( 'keydown', onKeyDown, false );
+				document.addEventListener( 'keyup', onKeyUp, false );
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+			function onWindowResize( event ) {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function onKeyDown ( event ) {
+
+				switch( event.keyCode ) {
+
+					case 38: /*up*/	controls.moveForward = true; break;
+
+					case 40: /*down*/controls.moveBackward = true; break;
+
+					case 37: /*left*/controls.moveLeft = true; break;
+
+					case 39: /*right*/controls.moveRight = true; break;
+
+				}
+
+			}
+
+			function onKeyUp ( event ) {
+
+
+				switch( event.keyCode ) {
+
+					case 38: /*up*/	controls.moveForward = false; break;
+
+					case 40: /*down*/controls.moveBackward = false; break;
+
+					case 37: /*left*/controls.moveLeft = false; break;
+
+					case 39: /*right*/controls.moveRight = false; break;
+
+				}
+			}
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				render();
+				stats.update();
+
+			}
+
+			function render() {
+
+				var delta = clock.getDelta();
+
+				car.update( delta, controls );
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
