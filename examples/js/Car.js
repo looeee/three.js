@@ -103,41 +103,7 @@ THREE.Car = function () {
 
 	};
 
-	this.loadPartsJSON = function ( bodyURL, wheelURL ) {
-
-		var loader = new THREE.JSONLoader();
-
-		loader.load( bodyURL, function( geometry, materials ) {
-
-			createBody( geometry, materials )
-
-		} );
-		loader.load( wheelURL, function( geometry, materials ) {
-
-			createWheels( geometry, materials )
-
-		} );
-
-	};
-
-	this.loadPartsBinary = function ( bodyURL, wheelURL ) {
-
-		var loader = new THREE.BinaryLoader();
-
-		loader.load( bodyURL, function( geometry, materials ) {
-
-			createBody( geometry, materials )
-
-		} );
-		loader.load( wheelURL, function( geometry, materials ) {
-
-			createWheels( geometry, materials )
-
-		} );
-
-	};
-
-	this.updateCarModel = function ( delta, controls ) {
+	this.update = function ( delta, controls ) {
 
 		// speed and wheels based on controls
 
@@ -253,9 +219,7 @@ THREE.Car = function () {
 
 	};
 
-	// internal helper methods
-
-	function createBody ( geometry, materials ) {
+	this.createBody = function ( geometry, materials ) {
 
 		scope.bodyGeometry = geometry;
 		scope.bodyMaterials = materials;
@@ -264,7 +228,7 @@ THREE.Car = function () {
 
 	}
 
-	function createWheels ( geometry, materials ) {
+	this.createWheels = function ( geometry, materials ) {
 
 		scope.wheelGeometry = geometry;
 		scope.wheelMaterials = materials;
