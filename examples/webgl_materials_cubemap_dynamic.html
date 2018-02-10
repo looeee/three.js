@@ -1,4 +1,4 @@
-<!DOCTYPE HTML>
+<!DOCTYPE html>
 <html lang="en">
 	<head>
 		<title>three.js webgl - materials - dynamic cube reflection</title>
@@ -6,191 +6,206 @@
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
 			body {
-				background: #000;
-				color: #333;
-				padding: 0;
-				margin: 0;
+				background-color: #000000;
+				margin: 0px;
 				overflow: hidden;
-				font-family: georgia;
-				font-size:1em;
-				text-align: center;
 			}
-			a { color: white }
 
-			#info { position: absolute; top: 10px; width: 100%; }
-			#container { position: absolute; top: 0px; }
-			#footer { position: absolute; bottom: 10px; width: 100%; }
+			#info {
+				position: absolute;
+				top: 0px; width: 100%;
+				color: #ffffff;
+				padding: 5px;
+				font-family:Monospace;
+				font-size:13px;
+				font-weight: bold;
+				text-align:center;
+			}
 
+			a {
+				color: #ffffff;
+			}
 		</style>
 	</head>
-
 	<body>
-		<div id="container"></div>
 
-		<div id="info">
-			<a href="http://threejs.org" target="_blank" rel="noopener">three.js</a> - webgl dynamic cube reflection demo -
-			gallardo by <a href="http://artist-3d.com/free_3d_models/dnm/model_disp.php?uid=1711" target="_blank" rel="noopener">machman_3d</a>
-		</div>
+		<div id="info"><a href="http://threejs.org" target="_blank" rel="noopener">three.js webgl</a> - materials - dynamic cube reflection<br/>Photo by <a href="http://www.flickr.com/photos/jonragnarsson/2294472375/" target="_blank" rel="noopener">J&oacute;n Ragnarsson</a>.</div>
 
 		<script src="../build/three.js"></script>
 
-		<script src="js/loaders/BinaryLoader.js"></script>
-
-		<script src="js/Car.js"></script>
-		<script src="js/Detector.js"></script>
-		<script src="js/libs/stats.min.js"></script>
-
 		<script>
 
-			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
-
-			var container, stats;
-
 			var camera, scene, renderer;
-			var renderTarget;
+			var cube, sphere, torus, material;
 
-			var spotLight, ambientLight;
+			var count = 0, cubeCamera1, cubeCamera2;
 
-			var clock = new THREE.Clock();
+			var lon = 0, lat = 0;
+			var phi = 0, theta = 0;
 
-			var controls = {
+			var textureLoader = new THREE.TextureLoader();
 
-				moveForward: false,
-				moveBackward: false,
-				moveLeft: false,
-				moveRight: false
+			textureLoader.load( 'textures/2294472375_24a3b8ef46_o.jpg', function ( texture ) {
 
-			};
+				texture.mapping = THREE.UVMapping;
 
-			var car;
+				init( texture );
+				animate();
 
-			init();
-			animate();
+			} );
 
-			function init() {
+			function init( texture ) {
 
-				container = document.getElementById( 'container' );
-
-				camera = new THREE.PerspectiveCamera( 18, window.innerWidth / window.innerHeight, 1, 100000 );
-				camera.position.set( 3000, 0, 3000 );
-				camera.lookAt( new THREE.Vector3() )
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 1, 1000 );
 
 				scene = new THREE.Scene();
-				scene.background = new THREE.Color().setHSL( 0.51, 0.6, 0.6 );
-				scene.fog = new THREE.Fog( scene.background, 3000, 10000 );
 
-				var ground = new THREE.Mesh( new THREE.PlaneBufferGeometry( 50000, 50000 ), new THREE.MeshBasicMaterial( { color: 0xcccccc } ) );
-				ground.position.y = - 215;
-				ground.rotation.x = - Math.PI / 2;
-				scene.add( ground );
+				var mesh = new THREE.Mesh( new THREE.SphereBufferGeometry( 500, 32, 16 ), new THREE.MeshBasicMaterial( { map: texture } ) );
+				mesh.geometry.scale( - 1, 1, 1 );
+				scene.add( mesh );
 
-				ambientLight = new THREE.AmbientLight( 0x555555 );
-				scene.add( ambientLight );
-
-				spotLight = new THREE.SpotLight( 0xffffff, 1, 0, Math.PI/2 );
-				spotLight.position.set( 0, 1800, 1500 );
-				spotLight.castShadow = true;
-
-				scene.add( spotLight );
-
-				renderer = new THREE.WebGLRenderer( { antialias: false } );
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
-				container.appendChild( renderer.domElement );
 
-				stats = new Stats();
-				container.appendChild( stats.dom );
+				cubeCamera1 = new THREE.CubeCamera( 1, 1000, 256 );
+				cubeCamera1.renderTarget.texture.minFilter = THREE.LinearMipMapLinearFilter;
+				scene.add( cubeCamera1 );
 
-				car = new THREE.Car();
+				cubeCamera2 = new THREE.CubeCamera( 1, 1000, 256 );
+				cubeCamera2.renderTarget.texture.minFilter = THREE.LinearMipMapLinearFilter;
+				scene.add( cubeCamera2 );
 
-				car.modelScale = 2;
-				car.backWheelOffset = 45;
+				document.body.appendChild( renderer.domElement );
 
-				car.callback = function( object ) {
+				//
 
-					object.root.position.set( 300, -110, 0, -110 );
-					scene.add( object.root );
-
-				};
-
-				// car.loadPartsBinary( "obj/gallardo/parts/gallardo_body_bin.js", "obj/gallardo/parts/gallardo_wheel_bin.js" );
-
-				var loader = new THREE.BinaryLoader();
-
-				loader.load( "obj/gallardo/parts/gallardo_body_bin.js", function( geometry, materials ) {
-
-					car.createBody( geometry, materials )
-
-				} );
-				loader.load( "obj/gallardo/parts/gallardo_wheel_bin.js", function( geometry, materials ) {
-
-					car.createWheels( geometry, materials )
-
+				material = new THREE.MeshBasicMaterial( {
+					envMap: cubeCamera2.renderTarget.texture
 				} );
 
+				sphere = new THREE.Mesh( new THREE.IcosahedronBufferGeometry( 20, 3 ), material );
+				scene.add( sphere );
 
-				document.addEventListener( 'keydown', onKeyDown, false );
-				document.addEventListener( 'keyup', onKeyUp, false );
+				cube = new THREE.Mesh( new THREE.BoxBufferGeometry( 20, 20, 20 ), material );
+				scene.add( cube );
 
-				window.addEventListener( 'resize', onWindowResize, false );
+				torus = new THREE.Mesh( new THREE.TorusKnotBufferGeometry( 10, 5, 100, 25 ), material );
+				scene.add( torus );
+
+				//
+
+				document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+				document.addEventListener( 'wheel', onDocumentMouseWheel, false );
+
+				window.addEventListener( 'resize', onWindowResized, false );
 
 			}
 
-			function onWindowResize( event ) {
+			function onWindowResized( event ) {
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
 
 				camera.aspect = window.innerWidth / window.innerHeight;
 				camera.updateProjectionMatrix();
 
-				renderer.setSize( window.innerWidth, window.innerHeight );
+			}
+
+			function onDocumentMouseDown( event ) {
+
+				event.preventDefault();
+
+				onPointerDownPointerX = event.clientX;
+				onPointerDownPointerY = event.clientY;
+
+				onPointerDownLon = lon;
+				onPointerDownLat = lat;
+
+				document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+				document.addEventListener( 'mouseup', onDocumentMouseUp, false );
 
 			}
 
-			function onKeyDown ( event ) {
+			function onDocumentMouseMove( event ) {
 
-				switch( event.keyCode ) {
-
-					case 38: /*up*/	controls.moveForward = true; break;
-
-					case 40: /*down*/controls.moveBackward = true; break;
-
-					case 37: /*left*/controls.moveLeft = true; break;
-
-					case 39: /*right*/controls.moveRight = true; break;
-
-				}
+				lon = ( event.clientX - onPointerDownPointerX ) * 0.1 + onPointerDownLon;
+				lat = ( event.clientY - onPointerDownPointerY ) * 0.1 + onPointerDownLat;
 
 			}
 
-			function onKeyUp ( event ) {
+			function onDocumentMouseUp( event ) {
 
+				document.removeEventListener( 'mousemove', onDocumentMouseMove, false );
+				document.removeEventListener( 'mouseup', onDocumentMouseUp, false );
 
-				switch( event.keyCode ) {
+			}
 
-					case 38: /*up*/	controls.moveForward = false; break;
+			function onDocumentMouseWheel( event ) {
 
-					case 40: /*down*/controls.moveBackward = false; break;
+				var fov = camera.fov + event.deltaY * 0.05;
 
-					case 37: /*left*/controls.moveLeft = false; break;
+				camera.fov = THREE.Math.clamp( fov, 10, 75 );
 
-					case 39: /*right*/controls.moveRight = false; break;
+				camera.updateProjectionMatrix();
 
-				}
 			}
 
 			function animate() {
 
 				requestAnimationFrame( animate );
-
 				render();
-				stats.update();
 
 			}
 
 			function render() {
 
-				var delta = clock.getDelta();
+				var time = Date.now();
 
-				car.update( delta, controls );
+				lon += .15;
+
+				lat = Math.max( - 85, Math.min( 85, lat ) );
+				phi = THREE.Math.degToRad( 90 - lat );
+				theta = THREE.Math.degToRad( lon );
+
+				cube.position.x = Math.cos( time * 0.001 ) * 30;
+				cube.position.y = Math.sin( time * 0.001 ) * 30;
+				cube.position.z = Math.sin( time * 0.001 ) * 30;
+
+				cube.rotation.x += 0.02;
+				cube.rotation.y += 0.03;
+
+				torus.position.x = Math.cos( time * 0.001 + 10 ) * 30;
+				torus.position.y = Math.sin( time * 0.001 + 10 ) * 30;
+				torus.position.z = Math.sin( time * 0.001 + 10 ) * 30;
+
+				torus.rotation.x += 0.02;
+				torus.rotation.y += 0.03;
+
+				camera.position.x = 100 * Math.sin( phi ) * Math.cos( theta );
+				camera.position.y = 100 * Math.cos( phi );
+				camera.position.z = 100 * Math.sin( phi ) * Math.sin( theta );
+
+				camera.lookAt( scene.position );
+
+				sphere.visible = false;
+
+				// pingpong
+
+				if ( count % 2 === 0 ) {
+
+					material.envMap = cubeCamera1.renderTarget.texture;
+					cubeCamera2.update( renderer, scene );
+
+				} else {
+
+					material.envMap = cubeCamera2.renderTarget.texture;
+					cubeCamera1.update( renderer, scene );
+
+				}
+
+				count ++;
+
+				sphere.visible = true;
 
 				renderer.render( scene, camera );
 
