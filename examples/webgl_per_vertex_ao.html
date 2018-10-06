@@ -117,29 +117,38 @@
 				scene.add( shadowLight );
 
 				var loader = new THREE.GLTFLoader();
-				loader.load( './models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf', function ( gltf ) {
+				loader.load( './models/gltf/monu7.glb', function ( gltf ) {
 
-					model = gltf.scene.getObjectByName( 'node_damagedHelmet_-6514' );
+					model = gltf.scene.getObjectByName( 'mesh_0' );
+					// model = gltf.scene.getObjectByName( 'node_damagedHelmet_-6514' );
+
+					model.scale.multiplyScalar( 0.01 );
+
 					scene.add( model );
 
 					model.castShadow = true;
 					model.receiveShadow = true;
 
-					initMaterials( model.material );
-					model.material = materials[ 0 ];
+					// model.material.forEach( (mat) => { mat.envMap = }) = envMap;
+					model.material.envMap = envMap;
 
-					var time = performance.now();
-					calculateAreas( model.geometry );
-					var time2 = performance.now();
+					console.log( model );
 
-					var areaTime = Math.floor( time2 - time );
-					ambientOcclusion( model.geometry );
-					var occlusionTime = Math.floor( performance.now() - time2 );
+					// initMaterials( model.material );
+					// model.material = materials[ 0 ];
 
-					var totalTime = Math.floor( performance.now() - time );
+					// var time = performance.now();
+					// calculateAreas( model.geometry );
+					// var time2 = performance.now();
 
-					var numVertices = model.geometry.attributes.position.count;
-					document.querySelector( '#performance' ).innerHTML = 'Calculation Time (' + numVertices + ' vertices): Surface element areas: ' + areaTime + 'ms. Ambient Occlusion: ' + occlusionTime + 'ms. Total: ' + totalTime + 'ms.';
+					// var areaTime = Math.floor( time2 - time );
+					// ambientOcclusion( model.geometry );
+					// var occlusionTime = Math.floor( performance.now() - time2 );
+
+					// var totalTime = Math.floor( performance.now() - time );
+
+					// var numVertices = model.geometry.attributes.position.count;
+					// document.querySelector( '#performance' ).innerHTML = 'Calculation Time (' + numVertices + ' vertices): Surface element areas: ' + areaTime + 'ms. Ambient Occlusion: ' + occlusionTime + 'ms. Total: ' + totalTime + 'ms.';
 
 				} );
 
