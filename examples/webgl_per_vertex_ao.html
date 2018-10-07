@@ -97,11 +97,11 @@
 				grid.material.transparent = true;
 				scene.add( grid );
 
-				var hemiLight = new THREE.HemisphereLight( 0x7c849b, 0xd7cbb1, 0.1 );
+				var hemiLight = new THREE.HemisphereLight( 0x7c849b, 0xd7cbb1, 1 );
 				hemiLight.position.set( 0, 1, 0 );
 				scene.add( hemiLight );
 
-				shadowLight = new THREE.DirectionalLight( 0xffffee, 0.1 );
+				shadowLight = new THREE.DirectionalLight( 0xffffee, 1 );
 				shadowLight.position.set( - 1.5, 1.25, - 1.5 );
 				shadowLight.castShadow = true;
 				shadowLight.shadow.width = 1024;
@@ -117,38 +117,44 @@
 				scene.add( shadowLight );
 
 				var loader = new THREE.GLTFLoader();
-				loader.load( './models/gltf/monu7.glb', function ( gltf ) {
 
-					model = gltf.scene.getObjectByName( 'mesh_0' );
-					// model = gltf.scene.getObjectByName( 'node_damagedHelmet_-6514' );
+				loader.load( './models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf', function ( gltf ) {
+				// loader.load( './models/gltf/monu7_noindex.glb', function ( gltf ) {
 
-					model.scale.multiplyScalar( 0.01 );
+
+					// model = gltf.scene.getObjectByName( 'monu7' );
+					// model = gltf.scene.getObjectByName( 'mesh_0' );
+					// model.scale.multiplyScalar( 0.015 );
+					// model.position.y -= 0.9;
+
+
+					model = gltf.scene.getObjectByName( 'node_damagedHelmet_-6514' );
+
+
 
 					scene.add( model );
 
 					model.castShadow = true;
 					model.receiveShadow = true;
 
-					// model.material.forEach( (mat) => { mat.envMap = }) = envMap;
-					model.material.envMap = envMap;
+					console.log( model.geometry, model.material );
 
-					console.log( model );
+					initMaterials( model.material );
 
-					// initMaterials( model.material );
-					// model.material = materials[ 0 ];
+					var time = performance.now();
+					calculateAreas( model.geometry );
+					var time2 = performance.now();
+					var areaTime = Math.floor( time2 - time );
 
-					// var time = performance.now();
-					// calculateAreas( model.geometry );
-					// var time2 = performance.now();
+					console.log( areaTime );
 
-					// var areaTime = Math.floor( time2 - time );
-					// ambientOcclusion( model.geometry );
-					// var occlusionTime = Math.floor( performance.now() - time2 );
+					ambientOcclusion( model.geometry );
+					var occlusionTime = Math.floor( performance.now() - time2 );
 
-					// var totalTime = Math.floor( performance.now() - time );
+					var totalTime = Math.floor( performance.now() - time );
 
-					// var numVertices = model.geometry.attributes.position.count;
-					// document.querySelector( '#performance' ).innerHTML = 'Calculation Time (' + numVertices + ' vertices): Surface element areas: ' + areaTime + 'ms. Ambient Occlusion: ' + occlusionTime + 'ms. Total: ' + totalTime + 'ms.';
+					var numVertices = model.geometry.attributes.position.count;
+					document.querySelector( '#performance' ).innerHTML = 'Calculation Time (' + numVertices + ' vertices): Surface element areas: ' + areaTime + 'ms. Ambient Occlusion: ' + occlusionTime + 'ms. Total: ' + totalTime + 'ms.';
 
 				} );
 
@@ -187,13 +193,16 @@
 
 			function initMaterials( originalMaterial ) {
 
-				originalMaterial.envMap = envMap;
-				originalMaterial.aoMap = aoMap;
+				// originalMaterial.envMap = envMap;
+				// originalMaterial.aoMap = aoMap;
 
+				var aoMap = null;
 				materials = [
 					new THREE.MeshBasicMaterial( { aoMap: aoMap } ),
-					originalMaterial,
+					new THREE.MeshPhongMaterial( { vertexColors: THREE.VertexColors, flatShading: true } ),
 				];
+
+				model.material = materials[ 1 ];
 
 			}
 
@@ -229,21 +238,8 @@
 
 				} ).name( 'Material' ).onChange( function () {
 
-					var num = parseInt( params.material );
-
-					// enable envMap by default for original material
-					if ( num === 3 ) {
-
-						materials[ num ].envMap = envMap;
-						params.envMap = true;
-
-					} else {
-
-						params.envMap = ( materials[ num ].envMap === null ) ? false : true;
-
-					}
-					model.material = materials[ num ];
-					model.material.needsUpdate = true;
+					model.material = materials[ parseInt( params.material ) ];
+					// model.material.needsUpdate = true;
 
 				} );
 
@@ -262,6 +258,12 @@
 
 			}
 
+			function areaOfFace( face ) {
+
+				return 0.5 * edge1.cross( edge2 ).length();
+
+			};
+
 			// amount of occlusion from emitter surface to reciever surface
 			function solidAngle( v, d2, receiverNormal, emitterNormal, emitterArea ) {
 
@@ -277,73 +279,111 @@
 			// Note:  the method used here requires indexed geometry.
 			function calculateAreas( geometry ) {
 
+				var geo = new THREE.Geometry().fromBufferGeometry( geometry );
+
+				// initialise areas to 0
+				var areas = new Array( geo.vertices.length ).fill( 0 );
+
+				// store how many faces each vertex is a member of (initialise to 0)
+				var numFaces = areas.slice();
+
 				var edge1 = new THREE.Vector3();
 				var edge2 = new THREE.Vector3();
 
-				var positions = geometry.attributes.position.array;
-				var indices = geometry.index.array;
+				geo.faces.forEach( function ( face ) {
 
-				var encounteredIndices = [];
+					var v1 = geo.vertices[ face.a ];
+					var v2 = geo.vertices[ face.b ];
+					var v3 = geo.vertices[ face.c ];
 
-				var areas = [];
+					edge1.copy( v1 ).sub( v2 );
+					edge2.copy( v1 ).sub( v3 );
 
-				// for each vertex, the area is calculated as the weighted sum of the area of each face it is a member of
-				indices.forEach( function ( pIndex ) {
+					var area = 0.5 * edge1.cross( edge2 ).length();
 
-					if ( encounteredIndices[ pIndex ] === 'x' ) return;
-					encounteredIndices[ pIndex ] = 'x'; // mark an 'x' for each index we have processed
+					// //accumulate areas for each vertex in face
+					areas[ face.a ] += area / 3;
+					areas[ face.b ] += area / 3;
+					areas[ face.c ] += area / 3;
 
-					// find all faces the vertex is a member of
-					var allIndices = getAllIndexes( indices, pIndex );
-
-					areas[ pIndex ] = 0;
-					allIndices.forEach( function ( j ) {
-
-						var edge1Index;
-						var edge2Index;
-
-						if ( j % 3 === 0 ) { // j is first index in face
-
-							edge1Index = indices[ j + 1 ];
-							edge2Index = indices[ j + 2 ];
-
-						} else if ( j % 3 === 1 ) { // j is second index in face
-
-							edge1Index = indices[ j - 1 ];
-							edge2Index = indices[ j + 1 ];
-
-						} else { // j is last index in face
-
-							edge1Index = indices[ j - 1 ];
-							edge2Index = indices[ j - 2 ];
-
-						}
-
-						edge1.set(
-							positions[ pIndex * 3 ] - positions[ edge1Index * 3 ],
-							positions[ pIndex * 3 + 1 ] - positions[ edge1Index * 3 + 1 ],
-							positions[ pIndex * 3 + 2 ] - positions[ edge1Index * 3 + 2 ]
-						);
-
-						edge2.set(
-							positions[ pIndex * 3 ] - positions[ edge2Index * 3 ],
-							positions[ pIndex * 3 + 1 ] - positions[ edge2Index * 3 + 1 ],
-							positions[ pIndex * 3 + 2 ] - positions[ edge2Index * 3 + 2 ]
-						);
-
-						areas[ pIndex ] += 0.5 * edge1.cross( edge2 ).length();
-
-					} );
-
-					areas[ pIndex ] /= 3;
+					numFaces[ face.a ] ++;
+					numFaces[ face.b ] ++;
+					numFaces[ face.c ] ++;
 
 				} );
+
+				// areas.forEach( function ( area, i ) {
+
+				// 	areas[ i ] /= 3;
+
+				// } );
+
+				// var positions = geometry.attributes.position.array;
+				// var indices = geometry.index.array;
+
+				// var encounteredIndices = [];
+
+				// var areas = [];
+
+				// for each vertex, the area is calculated as the weighted sum of the area of each face it is a member of
+				// indices.forEach( function ( pIndex ) {
+
+				// 	if ( encounteredIndices[ pIndex ] === 'x' ) return;
+				// 	encounteredIndices[ pIndex ] = 'x'; // mark an 'x' for each index we have processed
+
+				// 	// find all faces the vertex is a member of
+				// 	var allIndices = getAllIndexes( indices, pIndex );
+
+				// 	areas[ pIndex ] = 0;
+				// 	allIndices.forEach( function ( j ) {
+
+				// 		var edge1Index;
+				// 		var edge2Index;
+
+				// 		if ( j % 3 === 0 ) { // j is first index in face
+
+				// 			edge1Index = indices[ j + 1 ];
+				// 			edge2Index = indices[ j + 2 ];
+
+				// 		} else if ( j % 3 === 1 ) { // j is second index in face
+
+				// 			edge1Index = indices[ j - 1 ];
+				// 			edge2Index = indices[ j + 1 ];
+
+				// 		} else { // j is last index in face
+
+				// 			edge1Index = indices[ j - 1 ];
+				// 			edge2Index = indices[ j - 2 ];
+
+				// 		}
+
+				// 		edge1.set(
+				// 			positions[ pIndex * 3 ] - positions[ edge1Index * 3 ],
+				// 			positions[ pIndex * 3 + 1 ] - positions[ edge1Index * 3 + 1 ],
+				// 			positions[ pIndex * 3 + 2 ] - positions[ edge1Index * 3 + 2 ]
+				// 		);
+
+				// 		edge2.set(
+				// 			positions[ pIndex * 3 ] - positions[ edge2Index * 3 ],
+				// 			positions[ pIndex * 3 + 1 ] - positions[ edge2Index * 3 + 1 ],
+				// 			positions[ pIndex * 3 + 2 ] - positions[ edge2Index * 3 + 2 ]
+				// 		);
+
+				// 		areas[ pIndex ] += 0.5 * edge1.cross( edge2 ).length();
+
+				// 	} );
+
+				// 	areas[ pIndex ] /= 3;
+
+				// } );
 
 				geometry.addAttribute( 'area', new THREE.Float32BufferAttribute( areas, 1 ) );
 
 			}
 
 			function ambientOcclusion( geometry ) {
+
+				// if ( ! geometry.attributes.normal ) geometry.computeVertexNormals();
 
 				var ao = [];
 
@@ -368,7 +408,7 @@
 
 					for ( var j = 0; j < positions.length; j += 3 ) {
 
-						var emitterArea = areas[ j / 3 ];
+						var emitterArea = areas[ j / 3 ] / 3;
 
 						emitter.fromArray( positions, j );
 						emitterNormal.fromArray( normals, j );
